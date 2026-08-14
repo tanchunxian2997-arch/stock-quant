@@ -12,20 +12,23 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 每 30 秒 (30000 毫秒) 自动无感拉取最新美股行情并全屏刷新
+# 每 30 秒自动无感拉取最新美股行情并全屏刷新
 st_autorefresh(interval=30000, key="realtime_stock_auto_refresh")
 
-# 注入尊享暗黑风格 CSS
+# 注入尊享暗黑交易风格 CSS
 st.markdown("""
 <style>
     .stApp { background-color: #0b0f19; color: #f8fafc; }
-    .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1200px; }
+    .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1200px; }
+    div[data-testid="stExpander"] { background-color: #111827; border: 1px solid #1f2937; border-radius: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
-# ================= 2. 标的池配置 =================
-# 现有核心持仓池
-MY_PORTFOLIO = ["NVDA", "ANET", "NTNX", "IONQ", "SOUN", "JOBY", "EH", "NOK"]
+# ================= 2. 会话状态与初始持仓管理 =================
+DEFAULT_PORTFOLIO = ["NVDA", "ANET", "NTNX", "IONQ", "SOUN", "JOBY", "EH", "NOK"]
+
+if "my_portfolio" not in st.session_state:
+    st.session_state["my_portfolio"] = DEFAULT_PORTFOLIO.copy()
 
 # $1 - $100 潜力金股深度调研数据库
 RADAR_STOCK_PROFILES = {
@@ -81,7 +84,7 @@ RADAR_STOCK_PROFILES = {
     }
 }
 
-# ================= 3. 量化核心计算函数 =================
+# ================= 3. 量化核心函数 =================
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -105,20 +108,64 @@ def get_expert_decision(symbol, price, pct_change, rsi, support, resistance, vol
     else:
         return f"📊 【缩量洗盘·按兵不动】短期正常回调整理，防守位(${support})依然有效，耐心观察多空博弈。"
 
-# ================= 4. 顶部操作栏 =================
+# ================= 4. 顶部标题与控制栏 =================
 col_title, col_btn = st.columns([3, 1])
 with col_title:
     st.markdown("<h2 style='color:#38bdf8;margin:0;font-weight:900;'>⚡ 美股量化实时战斗看板</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color:#94a3b8;font-size:12px;margin:2px 0 0 0;'>24小时云端常驻 · 自动每30秒更新最新盘面 · 30年实战交易员风控引擎</p>", unsafe_allow_html=True)
 with col_btn:
-    if st.button("🔄 手动强制刷新"):
+    if st.button("🔄 手动强制刷新", use_container_width=True):
         st.rerun()
 
-# ================= 5. 模块一：现有持仓实战监控看板 =================
-st.markdown("<div style='margin-top:16px;margin-bottom:12px;border-bottom:1px solid #1e293b;padding-bottom:6px;'><h3 style='color:#38bdf8;margin:0;font-size:18px;font-weight:800;'>⚡ 现有持仓实时监控看板</h3></div>", unsafe_allow_html=True)
+# ================= 5. 宏观市场大盘晴雨表 =================
+try:
+    macro_tickers = ["SPY", "QQQ", "^VIX"]
+    macro_data = yf.download(macro_tickers, period="2d", interval="1d", progress=False)['Close']
+    if len(macro_data) >= 2:
+        spy_c, qqq_c, vix_c = macro_data['SPY'].iloc[-1], macro_data['QQQ'].iloc[-1], macro_data['^VIX'].iloc[-1]
+        spy_p, qqq_p, vix_p = macro_data['SPY'].iloc[-2], macro_data['QQQ'].iloc[-2], macro_data['^VIX'].iloc[-2]
+        spy_pct = round(((spy_c - spy_p) / spy_p) * 100, 2)
+        qqq_pct = round(((qqq_c - qqq_p) / qqq_p) * 100, 2)
+        vix_pct = round(((vix_c - vix_p) / vix_p) * 100, 2)
+
+        st.markdown(f"""
+        <div style="display:flex;gap:10px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:8px 14px;margin-top:10px;margin-bottom:14px;font-size:12px;overflow-x:auto;">
+            <span>🏛️ <b>标普 SPY</b>: ${round(spy_c, 2)} (<b style="color:{'#10b981' if spy_pct>=0 else '#ef4444'}">{'+' if spy_pct>=0 else ''}{spy_pct}%</b>)</span>
+            <span> | </span>
+            <span>💻 <b>纳指 QQQ</b>: ${round(qqq_c, 2)} (<b style="color:{'#10b981' if qqq_pct>=0 else '#ef4444'}">{'+' if qqq_pct>=0 else ''}{qqq_pct}%</b>)</span>
+            <span> | </span>
+            <span>⚠️ <b>恐慌指数 VIX</b>: {round(vix_c, 2)} (<b style="color:{'#ef4444' if vix_pct>=0 else '#10b981'}">{'+' if vix_pct>=0 else ''}{vix_pct}%</b>)</span>
+        </div>
+        """, unsafe_allow_html=True)
+except:
+    pass
+
+# ================= 6. 搜索与动态自选管理模块 =================
+with st.expander("🔍 搜索美股 / 管理我的实时盯盘股票池 (点击展开/折叠)", expanded=False):
+    col_input, col_add = st.columns([3, 1])
+    with col_input:
+        new_symbol = st.text_input("输入任意美股代码 (如 TSLA, AAPL, AMD, PLTR)", value="").strip().upper()
+    with col_add:
+        st.write("")
+        st.write("")
+        if st.button("➕ 加入盯盘池", use_container_width=True):
+            if new_symbol and new_symbol not in st.session_state["my_portfolio"]:
+                st.session_state["my_portfolio"].append(new_symbol)
+                st.success(f"已成功添加 {new_symbol} 到实时盯盘池！")
+                st.rerun()
+
+    # 移除股票快捷多选
+    to_remove = st.multiselect("当前盯盘池标的 (选中的标的将被移除):", st.session_state["my_portfolio"], default=[])
+    if st.button("🗑️ 从盯盘池移除选中的股票"):
+        if to_remove:
+            st.session_state["my_portfolio"] = [s for s in st.session_state["my_portfolio"] if s not in to_remove]
+            st.rerun()
+
+# ================= 7. 模块一：现有持仓实战监控看板 =================
+st.markdown(f"<div style='margin-top:14px;margin-bottom:12px;border-bottom:1px solid #1e293b;padding-bottom:6px;'><h3 style='color:#38bdf8;margin:0;font-size:18px;font-weight:800;'>⚡ 现有持仓实时监控看板 ({len(st.session_state['my_portfolio'])} 只)</h3></div>", unsafe_allow_html=True)
 
 cols_p = st.columns(2)
-for idx, symbol in enumerate(MY_PORTFOLIO):
+for idx, symbol in enumerate(st.session_state["my_portfolio"]):
     col = cols_p[idx % 2]
     try:
         ticker = yf.Ticker(symbol)
@@ -171,12 +218,12 @@ for idx, symbol in enumerate(MY_PORTFOLIO):
     except:
         continue
 
-# ================= 6. 模块二：$1 - $100 潜力金股深度调研排行榜 =================
+# ================= 8. 模块二：$1 - $100 潜力金股深度调研排行榜 =================
 st.markdown("<div style='margin-top:24px;margin-bottom:12px;border-bottom:1px solid #78350f;padding-bottom:6px;'><h3 style='color:#fbbf24;margin:0;font-size:18px;font-weight:800;'>🏆 全自动雷达·潜力金股排行榜 ($1 - $100 深度调研版)</h3><p style='color:#d6d3d1;font-size:11px;margin:2px 0 0 0;'>已包含：公司主营业务赛道 / 核心竞争壁垒 / 中期业绩订单催化剂 / 目标位测算</p></div>", unsafe_allow_html=True)
 
 scanned = []
 for sym, profile in RADAR_STOCK_PROFILES.items():
-    if sym in MY_PORTFOLIO: continue
+    if sym in st.session_state["my_portfolio"]: continue
     try:
         t = yf.Ticker(sym)
         hist = t.history(period="1mo", interval="1d")
