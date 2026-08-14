@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-# ================= 页面配置（专为手机与桌面全屏自适应优化） =================
+# ================= 页面基础配置 =================
 st.set_page_config(
     page_title="⚡ 美股量化实时战斗看板",
     page_icon="📈",
@@ -10,18 +10,18 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 注入尊享暗黑交易风格 CSS
+# 注入全局样式
 st.markdown("""
 <style>
     .stApp { background-color: #0b0f19; color: #f8fafc; }
-    .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
+    .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1200px; }
 </style>
 """, unsafe_allow_html=True)
 
-# 1. 现有核心持仓池
+# 1. 现有持仓池
 MY_PORTFOLIO = ["NVDA", "ANET", "NTNX", "IONQ", "SOUN", "JOBY", "EH", "NOK"]
 
-# 2. $1 - $100 潜力金股深度调研数据库（行业赛道 + 护城河 + 中期爆发催化）
+# 2. 潜力金股深度调研数据库
 RADAR_STOCK_PROFILES = {
     "SYM": {
         "sector": "AI 仓储机器人自动化系统",
@@ -98,7 +98,7 @@ def get_expert_decision(symbol, price, pct_change, rsi, support, resistance, vol
     else:
         return f"📊 【缩量洗盘·按兵不动】短期正常回调整理，防守位(${support})依然有效，耐心观察多空博弈。"
 
-# ================= 顶部标题与控制栏 =================
+# 头部操作区
 col_title, col_btn = st.columns([3, 1])
 with col_title:
     st.markdown("<h2 style='color:#38bdf8;margin:0;font-weight:900;'>⚡ 美股量化实时战斗看板</h2>", unsafe_allow_html=True)
@@ -107,7 +107,7 @@ with col_btn:
     if st.button("🔄 立即刷新最新行情"):
         st.rerun()
 
-# ================= 模块一：现有持仓实战监控看板（恢复预警横幅） =================
+# ================= 模块一：现有持仓实战监控看板 =================
 st.markdown("<div style='margin-top:16px;margin-bottom:12px;border-bottom:1px solid #1e293b;padding-bottom:6px;'><h3 style='color:#38bdf8;margin:0;font-size:18px;font-weight:800;'>⚡ 现有持仓实时监控看板</h3></div>", unsafe_allow_html=True)
 
 cols_p = st.columns(2)
@@ -131,42 +131,40 @@ for idx, symbol in enumerate(MY_PORTFOLIO):
             vol_ratio = round(curr_vol / avg_vol, 1) if avg_vol > 0 else 1.0
             rsi = calculate_rsi(df['Close']).iloc[-1]
 
-            # 恢复图二中的醒目警报横幅
             action_banner = ""
             if curr_price <= low_20 * 1.01:
-                action_banner = f'<div style="background:#7f1d1d;color:#fecaca;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:8px;border-left:4px solid #ef4444;">🚨 破位警报：跌破20日防守支撑(${low_20})！主力弃守，短线减仓！</div>'
+                action_banner = f"<div style='background:#7f1d1d;color:#fecaca;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:8px;border-left:4px solid #ef4444;'>🚨 破位警报：跌破20日防守支撑(${low_20})！主力弃守，短线减仓！</div>"
             elif curr_price >= high_20 * 0.98 or rsi >= 75:
-                action_banner = f'<div style="background:#854d0e;color:#fef08a;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:8px;border-left:4px solid #eab308;">⚠️ 阻力预警：逼近前期抛压高位(${high_20})，严禁追涨！</div>'
+                action_banner = f"<div style='background:#854d0e;color:#fef08a;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:8px;border-left:4px solid #eab308;'>⚠️ 阻力预警：逼近前期抛压高位(${high_20})，严禁追涨！</div>"
 
             verdict = get_expert_decision(symbol, curr_price, pct_change, rsi, low_20, high_20, vol_ratio)
 
+            card_html = (
+                f"<div style='background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 8px 16px rgba(0,0,0,0.4);'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>"
+                f"<span style='font-size:22px;font-weight:900;color:#f8fafc;'>{symbol}</span>"
+                f"<div style='text-align:right;'><span style='font-size:22px;font-weight:800;color:#ffffff;'>${curr_price}</span>"
+                f"<span style='font-size:13px;font-weight:bold;color:{color};margin-left:4px;'>{sign}{pct_change}%</span></div>"
+                f"</div>"
+                f"{action_banner}"
+                f"<div style='display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;background:#0f172a;padding:6px 10px;border-radius:6px;margin-bottom:8px;'>"
+                f"<span>防守支撑: <b style='color:#34d399'>${low_20}</b></span>"
+                f"<span>阻力目标: <b style='color:#f87171'>${high_20}</b></span>"
+                f"<span>RSI: <b>{rsi}</b></span>"
+                f"<span>量能: <b>{vol_ratio}x</b></span>"
+                f"</div>"
+                f"<div style='background:#091e3a;border:1px solid #1e40af;border-radius:8px;padding:10px;'>"
+                f"<div style='font-size:11px;font-weight:bold;color:#60a5fa;margin-bottom:4px;'>🤖 Gemini 操盘手实战决断:</div>"
+                f"<div style='font-size:12px;color:#e2e8f0;line-height:1.45;'>{verdict}</div>"
+                f"</div>"
+                f"</div>"
+            )
             with col:
-                st.markdown(f"""
-                <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 8px 16px rgba(0,0,0,0.4);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                        <span style="font-size:22px;font-weight:900;color:#f8fafc;">{symbol}</span>
-                        <div style="text-align:right;">
-                            <span style="font-size:22px;font-weight:800;color:#ffffff;">${curr_price}</span>
-                            <span style="font-size:13px;font-weight:bold;color:{color};margin-left:4px;">{sign}{pct_change}%</span>
-                        </div>
-                    </div>
-                    {action_banner}
-                    <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;background:#0f172a;padding:6px 10px;border-radius:6px;margin-bottom:8px;">
-                        <span>防守支撑: <b style="color:#34d399">${low_20}</b></span>
-                        <span>阻力目标: <b style="color:#f87171">${high_20}</b></span>
-                        <span>RSI: <b>{rsi}</b></span>
-                        <span>量能: <b>{vol_ratio}x</b></span>
-                    </div>
-                    <div style="background:#091e3a;border:1px solid #1e40af;border-radius:8px;padding:10px;">
-                        <div style="font-size:11px;font-weight:bold;color:#60a5fa;margin-bottom:4px;">🤖 Gemini 操盘手实战决断:</div>
-                        <div style="font-size:12px;color:#e2e8f0;line-height:1.45;">{verdict}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(card_html, unsafe_allow_html=True)
     except:
         continue
 
-# ================= 模块二：$1 - $100 潜力金股深度调研排行榜（恢复赛道+壁垒+催化） =================
+# ================= 模块二：$1 - $100 潜力金股深度调研排行榜 =================
 st.markdown("<div style='margin-top:24px;margin-bottom:12px;border-bottom:1px solid #78350f;padding-bottom:6px;'><h3 style='color:#fbbf24;margin:0;font-size:18px;font-weight:800;'>🏆 全自动雷达·潜力金股排行榜 ($1 - $100 深度调研版)</h3><p style='color:#d6d3d1;font-size:11px;margin:2px 0 0 0;'>已包含：公司主营业务赛道 / 核心竞争壁垒 / 中期业绩订单催化剂 / 目标位测算</p></div>", unsafe_allow_html=True)
 
 scanned = []
@@ -213,45 +211,33 @@ for idx, item in enumerate(scanned[:4]):
     s = "+" if item['pct'] >= 0 else ""
     stars = "⭐️⭐️⭐️⭐️⭐️ (5星·强烈推荐)" if item['score'] >= 90 else "⭐️⭐️⭐️⭐️ (4星·优质入选)"
 
+    radar_card_html = (
+        f"<div style='background:#1c1917;border:2px solid #b45309;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 8px 16px rgba(0,0,0,0.6);'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;border-bottom:1px solid #451a03;padding-bottom:6px;'>"
+        f"<span style='font-size:13px;font-weight:900;color:#fbbf24;background:#451a03;padding:3px 8px;border-radius:6px;border:1px solid #d97706;'>{medals[idx]}</span>"
+        f"<span style='font-size:12px;font-weight:bold;color:#fde047;'>{stars}</span>"
+        f"</div>"
+        f"<div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;'>"
+        f"<div><span style='font-size:26px;font-weight:900;color:#ffffff;'>{item['symbol']}</span>"
+        f"<span style='font-size:11px;color:#a8a29e;margin-left:6px;'>综合量化分: <b style='color:#34d399;font-size:14px;'>{item['score']}</b></span></div>"
+        f"<div style='text-align:right;'><span style='font-size:22px;font-weight:800;color:#ffffff;'>${item['price']}</span>"
+        f"<span style='font-size:12px;font-weight:bold;color:{c};margin-left:4px;'>{s}{item['pct']}%</span></div>"
+        f"</div>"
+        f"<div style='display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;'>"
+        f"<span style='background:#064e3b;color:#34d399;font-size:11px;padding:3px 8px;border-radius:4px;font-weight:bold;border:1px solid #059669;'>🛡️ 安全边际：仅高于20日底部 {item['safety_pct']}%</span>"
+        f"<span style='background:#292524;color:#fde047;font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid #78350f;'>价位: $1-$100</span>"
+        f"</div>"
+        f"<div style='font-size:12px;color:#fef3c7;background:#291e10;border:1px solid #78350f;border-radius:8px;padding:10px;margin-bottom:10px;line-height:1.5;'>"
+        f"<div style='color:#fbbf24;font-weight:bold;margin-bottom:4px;'>🏢 核心赛道：{item['sector']}</div>"
+        f"<div style='color:#d6d3d1;margin-bottom:4px;'><b style='color:#fde047;'>🛡️ 护城河壁垒：</b>{item['moat']}</div>"
+        f"<div style='color:#fef08a;'><b style='color:#f59e0b;'>🚀 推荐理由 & 爆发催化：</b>{item['catalyst']}</div>"
+        f"</div>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#d6d3d1;background:#0c0a09;padding:6px 10px;border-radius:6px;'>"
+        f"<span>安全防守底线: <b style='color:#34d399'>${item['low_20']}</b></span>"
+        f"<span>RSI: <b style='color:#fde047;'>{item['rsi']}</b></span>"
+        f"<span>2-3月目标位: <b style='color:#f87171'>${item['target']} (+28%)</b></span>"
+        f"</div>"
+        f"</div>"
+    )
     with col:
-        st.markdown(f"""
-        <div style="background:#1c1917;border:2px solid #b45309;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 8px 16px rgba(0,0,0,0.6);">
-            <!-- 排名与星级头部 -->
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;border-bottom:1px solid #451a03;padding-bottom:6px;">
-                <span style="font-size:13px;font-weight:900;color:#fbbf24;background:#451a03;padding:3px 8px;border-radius:6px;border:1px solid #d97706;">{medals[idx]}</span>
-                <span style="font-size:12px;font-weight:bold;color:#fde047;">{stars}</span>
-            </div>
-
-            <!-- 代码与现价 -->
-            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
-                <div>
-                    <span style="font-size:26px;font-weight:900;color:#ffffff;">{item['symbol']}</span>
-                    <span style="font-size:11px;color:#a8a29e;margin-left:6px;">综合量化分: <b style="color:#34d399;font-size:14px;">{item['score']}</b></span>
-                </div>
-                <div style="text-align:right;">
-                    <span style="font-size:22px;font-weight:800;color:#ffffff;">${item['price']}</span>
-                    <span style="font-size:12px;font-weight:bold;color:{c};margin-left:4px;">{s}{item['pct']}%</span>
-                </div>
-            </div>
-
-            <!-- 安全边际与价格区间 -->
-            <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
-                <span style="background:#064e3b;color:#34d399;font-size:11px;padding:3px 8px;border-radius:4px;font-weight:bold;border:1px solid #059669;">🛡️ 安全边际：仅高于20日底部 {item['safety_pct']}%</span>
-                <span style="background:#292524;color:#fde047;font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid #78350f;">价位: $1-$100</span>
-            </div>
-
-            <!-- 行业赛道与壁垒 -->
-            <div style="font-size:12px;color:#fef3c7;background:#291e10;border:1px solid #78350f;border-radius:8px;padding:10px;margin-bottom:10px;line-height:1.5;">
-                <div style="color:#fbbf24;font-weight:bold;margin-bottom:4px;">🏢 核心赛道：{item['sector']}</div>
-                <div style="color:#d6d3d1;margin-bottom:4px;"><b style="color:#fde047;">🛡️ 护城河壁垒：</b>{item['moat']}</div>
-                <div style="color:#fef08a;"><b style="color:#f59e0b;">🚀 推荐理由 & 爆发催化：</b>{item['catalyst']}</div>
-            </div>
-
-            <!-- 底部支撑与目标位 -->
-            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#d6d3d1;background:#0c0a09;padding:6px 10px;border-radius:6px;">
-                <span>安全防守底线: <b style="color:#34d399">${item['low_20']}</b></span>
-                <span>RSI: <b style="color:#fde047;">{item['rsi']}</b></span>
-                <span>2-3月目标位: <b style="color:#f87171">${item['target']} (+28%)</b></span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(radar_card_html, unsafe_allow_html=True)
