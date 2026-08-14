@@ -13,10 +13,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 每 45 秒自动无感拉取最新盘面并刷新
+# 每 45 秒自动无感自刷新
 st_autorefresh(interval=45000, key="realtime_stock_auto_refresh")
 
-# 注入尊享交易界面样式
+# 注入尊享暗黑交易风格与卡片样式
 st.markdown("""
 <style>
     .stApp { background-color: #0b0f19; color: #f8fafc; }
@@ -57,17 +57,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ================= 2. 状态管理与持仓成本初始化 =================
+# ================= 2. 状态管理与标的数据库 =================
 DEFAULT_PORTFOLIO = ["NVDA", "ANET", "NTNX", "IONQ", "SOUN", "JOBY", "EH", "NOK"]
 
 if "my_portfolio" not in st.session_state:
     st.session_state["my_portfolio"] = DEFAULT_PORTFOLIO.copy()
 
 if "portfolio_costs" not in st.session_state:
-    # 结构: {"NVDA": {"cost": 0.0, "shares": 0}}
     st.session_state["portfolio_costs"] = {s: {"cost": 0.0, "shares": 0} for s in DEFAULT_PORTFOLIO}
 
-# 潜力金股深度调研数据库
 RADAR_STOCK_PROFILES = {
     "SYM": {
         "sector": "AI 仓储机器人自动化系统",
@@ -146,20 +144,17 @@ def get_expert_decision(symbol, price, pct_change, rsi, support, resistance, vol
         return f"📊 【缩量洗盘·按兵不动】短期正常回调整理，防守位(${support})依然有效，耐心观察多空博弈。"
 
 def run_backtest_and_holding_analysis(df):
-    """模块二：历史策略回测与最佳持有周期诊断"""
     try:
         df = df.copy()
         df['RSI'] = calculate_rsi(df['Close'])
         df['SMA20'] = df['Close'].rolling(20).mean()
         
-        # 模拟支撑位反弹买入信号
         signals = []
         for i in range(20, len(df)-5):
             if df['RSI'].iloc[i] <= 42 or df['Close'].iloc[i] <= df['SMA20'].iloc[i] * 0.98:
                 buy_p = df['Close'].iloc[i]
-                sell_p_short = df['Close'].iloc[i+5]   # 1周(5个交易日)
-                sell_p_long = df['Close'].iloc[min(i+30, len(df)-1)] # 1.5个月(30个交易日)
-                
+                sell_p_short = df['Close'].iloc[i+5]
+                sell_p_long = df['Close'].iloc[min(i+30, len(df)-1)]
                 ret_short = (sell_p_short - buy_p) / buy_p
                 ret_long = (sell_p_long - buy_p) / buy_p
                 signals.append((ret_short, ret_long))
@@ -169,23 +164,21 @@ def run_backtest_and_holding_analysis(df):
             win_long = sum(1 for s in signals if s[1] > 0) / len(signals) * 100
             
             if win_short > win_long + 10:
-                holding_advice = f"⚡ 【波段高抛低吸标的】: 短线持有(1-2周)胜率高达 **{round(win_short,1)}%**，长线持有胜率降至 {round(win_long,1)}%！**适合吃一波就跑，切忌长拿死扛！**"
+                holding_advice = f"⚡ 【波段高抛低吸】: 短线(1-2周)胜率高达 **{round(win_short,1)}%**，长线持有胜率降至 {round(win_long,1)}%！**适合吃一波就跑，切忌死扛！**"
             elif win_long >= win_short:
-                holding_advice = f"💎 【长线趋势大白马】: 持有时间越久胜率越高！中长线持有胜率达 **{round(win_long,1)}%**，**适合耐心持有，享受主升浪！**"
+                holding_advice = f"💎 【长线趋势白马】: 持有时间越久胜率越高！中长线持有胜率达 **{round(win_long,1)}%**，**适合耐心持有，拿稳主升浪！**"
             else:
-                holding_advice = f"⚖️ 【稳健中短皆宜】: 短线胜率 {round(win_short,1)}%，中线胜率 {round(win_long,1)}%，遵循支撑阻力操作即可。"
+                holding_advice = f"⚖️ 【中短皆宜】: 短线胜率 {round(win_short,1)}%，中线胜率 {round(win_long,1)}%，遵循防守位操作。"
             return round(win_short, 1), holding_advice
     except:
         pass
     return 65.0, "📊 历史回测胜率稳健，建议按照 20 日防守位严格执行交易。"
 
 def draw_candlestick_chart(df, symbol):
-    """绘制专业交互式暗黑蜡烛图"""
-    df_plot = df.tail(60).copy() # 最近60个交易日
+    df_plot = df.tail(60).copy()
     df_plot['MA20'] = df_plot['Close'].rolling(20).mean()
 
     fig = go.Figure()
-    # 蜡烛图
     fig.add_trace(go.Candlestick(
         x=df_plot.index.strftime('%Y-%m-%d'),
         open=df_plot['Open'], high=df_plot['High'],
@@ -193,7 +186,6 @@ def draw_candlestick_chart(df, symbol):
         name="K线",
         increasing_line_color='#10b981', decreasing_line_color='#ef4444'
     ))
-    # MA20 均线
     fig.add_trace(go.Scatter(
         x=df_plot.index.strftime('%Y-%m-%d'),
         y=df_plot['MA20'],
@@ -213,10 +205,10 @@ def draw_candlestick_chart(df, symbol):
     )
     return fig
 
-# ================= 4. 顶部宏观大盘晴雨表 =================
+# ================= 4. 顶部操作栏与大盘晴雨表 =================
 col_title, col_btn = st.columns([3, 1])
 with col_title:
-    st.markdown("<h2 style='color:#38bdf8;margin:0;font-weight:900;font-size:22px;'>⚡ 美股量化实时战斗工作站</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color:#38bdf8;margin:0;font-weight:900;font-size:22px;'>⚡ 美股机构级量化战斗工作站</h2>", unsafe_allow_html=True)
 with col_btn:
     if st.button("🔄 刷新盘面", use_container_width=True):
         st.rerun()
@@ -313,24 +305,69 @@ if search_query:
     except Exception as e:
         st.error(f"查询失败: {e}")
 
-# ================= 6. 模块一：持仓成本录入与盈亏追踪看板 =================
-st.markdown(f"<div style='margin-top:16px;margin-bottom:8px;'><h3 style='color:#38bdf8;margin:0;font-size:17px;font-weight:800;'>⚡ 现有持仓实时监控与盈亏分析 ({len(st.session_state['my_portfolio'])} 只)</h3></div>", unsafe_allow_html=True)
+# ================= 6. 模块一：总账户盈亏看板 + 现有持仓实时监控 =================
+# 先拉取所有持仓现价，计算全局总盈亏
+portfolio_cache = {}
+total_invested = 0.0
+total_market_val = 0.0
 
-# 抽屉 1：持仓成本与仓位录入
-with st.expander("💼 【模块一】录入持仓成本与持股数量 (计算浮动盈亏)", expanded=False):
-    st.caption("填写你的买入均价和持股数，系统将自动在卡片上计算实时盈亏与保本防守线：")
-    cost_cols = st.columns(3)
-    for c_i, c_sym in enumerate(st.session_state["my_portfolio"]):
-        with cost_cols[c_i % 3]:
-            curr_c = st.session_state["portfolio_costs"].get(c_sym, {}).get("cost", 0.0)
-            curr_s = st.session_state["portfolio_costs"].get(c_sym, {}).get("shares", 0)
-            with st.container():
-                st.markdown(f"<b>{c_sym}</b>", unsafe_allow_html=True)
-                new_c = st.number_input(f"成本价 ($)", value=float(curr_c), step=0.5, key=f"input_cost_{c_sym}")
-                new_s = st.number_input(f"持股数 (股)", value=int(curr_s), step=10, key=f"input_shares_{c_sym}")
-                st.session_state["portfolio_costs"][c_sym] = {"cost": new_c, "shares": new_s}
+for symbol in st.session_state["my_portfolio"]:
+    try:
+        t = yf.Ticker(symbol)
+        d = t.history(period="1y", interval="1d")
+        if len(d) >= 15:
+            cp = round(d['Close'].iloc[-1], 2)
+            c_cost = st.session_state["portfolio_costs"].get(symbol, {}).get("cost", 0.0)
+            c_shares = st.session_state["portfolio_costs"].get(symbol, {}).get("shares", 0)
+            if c_cost > 0 and c_shares > 0:
+                total_invested += (c_cost * c_shares)
+                total_market_val += (cp * c_shares)
+            
+            # 抓取最新真实美股新闻
+            news_items = []
+            try:
+                for n in t.news[:2]: # 取最新2条
+                    title = n.get('title', '')
+                    publisher = n.get('publisher', '')
+                    if title:
+                        news_items.append(f"📰 <b>[{publisher}]</b> {title}")
+            except:
+                pass
+            
+            portfolio_cache[symbol] = {
+                "df": d,
+                "ticker": t,
+                "curr_price": cp,
+                "news": news_items
+            }
+    except:
+        continue
 
-# 抽屉 2：管理/移除股票
+# 顶部总账户盈亏大卡片
+if total_invested > 0:
+    total_pnl_dollars = round(total_market_val - total_invested, 2)
+    total_pnl_pct = round((total_pnl_dollars / total_invested) * 100, 2)
+    tot_color = "#10b981" if total_pnl_dollars >= 0 else "#ef4444"
+    tot_sign = "+" if total_pnl_dollars >= 0 else ""
+    
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg, #1e293b, #0f172a);border:2px solid {'#059669' if total_pnl_dollars>=0 else '#dc2626'};border-radius:14px;padding:14px 18px;margin-top:14px;margin-bottom:12px;box-shadow:0 8px 20px rgba(0,0,0,0.5);">
+        <div style="font-size:12px;color:#94a3b8;font-weight:bold;margin-bottom:4px;">💼 我的投资组合·总持仓浮动盈亏概况</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;">
+            <div>
+                <span style="font-size:12px;color:#cbd5e1;">总持仓市值: </span>
+                <span style="font-size:22px;font-weight:900;color:#ffffff;">${round(total_market_val, 2)}</span>
+                <span style="font-size:11px;color:#64748b;margin-left:6px;">(本金: ${round(total_invested, 2)})</span>
+            </div>
+            <div>
+                <span style="font-size:12px;color:#cbd5e1;">累计浮动盈亏: </span>
+                <span style="font-size:22px;font-weight:900;color:{tot_color};">{tot_sign}${total_pnl_dollars} ({tot_sign}{total_pnl_pct}%)</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# 快速移除抽屉
 with st.expander("⚙️ 快速移除 / 管理盯盘股票", expanded=False):
     st.caption("点击下方任意股票胶囊，即可一键移出盯盘池：")
     pill_cols = st.columns(4)
@@ -343,114 +380,126 @@ with st.expander("⚙️ 快速移除 / 管理盯盘股票", expanded=False):
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-# 渲染持仓卡片列表
+st.markdown(f"<div style='margin-top:14px;margin-bottom:10px;'><h3 style='color:#38bdf8;margin:0;font-size:17px;font-weight:800;'>⚡ 现有持仓实时监控 ({len(st.session_state['my_portfolio'])} 只)</h3></div>", unsafe_allow_html=True)
+
 cols_p = st.columns(2)
 for idx, symbol in enumerate(st.session_state["my_portfolio"]):
+    if symbol not in portfolio_cache: continue
     col = cols_p[idx % 2]
+    
+    data_item = portfolio_cache[symbol]
+    df = data_item["df"]
+    ticker = data_item["ticker"]
+    curr_price = data_item["curr_price"]
+    news_list = data_item["news"]
+
+    prev_close = round(df['Close'].iloc[-2], 2)
+    pct_change = round(((curr_price - prev_close) / prev_close) * 100, 2)
+    color = "#10b981" if pct_change >= 0 else "#ef4444"
+    sign = "+" if pct_change >= 0 else ""
+
+    high_20 = round(df['High'].tail(20).max(), 2)
+    low_20 = round(df['Low'].tail(20).min(), 2)
+    
+    curr_vol = df['Volume'].iloc[-1]
+    avg_vol = df['Volume'].rolling(5).mean().iloc[-2]
+    vol_ratio = round(curr_vol / avg_vol, 1) if avg_vol > 0 else 1.0
+    rsi = calculate_rsi(df['Close']).iloc[-1]
+
+    # 单股盈亏展示（直接在卡片第一眼）
+    user_cost = st.session_state["portfolio_costs"].get(symbol, {}).get("cost", 0.0)
+    user_shares = st.session_state["portfolio_costs"].get(symbol, {}).get("shares", 0)
+    if user_cost > 0 and user_shares > 0:
+        pnl_dollars = round((curr_price - user_cost) * user_shares, 2)
+        pnl_pct = round(((curr_price - user_cost) / user_cost) * 100, 2)
+        pnl_c = "#10b981" if pnl_dollars >= 0 else "#ef4444"
+        pnl_s = "+" if pnl_dollars >= 0 else ""
+        pnl_badge = f"<span style='background:{'#064e3b' if pnl_dollars>=0 else '#7f1d1d'};color:{'#34d399' if pnl_dollars>=0 else '#fca5a5'};font-size:11px;font-weight:bold;padding:2px 8px;border-radius:6px;'>盈亏: {pnl_s}${pnl_dollars} ({pnl_s}{pnl_pct}%)</span>"
+    else:
+        pnl_badge = "<span style='color:#64748b;font-size:11px;'>未录入持股成本</span>"
+
+    # 警报横幅
+    action_banner = ""
+    if curr_price <= low_20 * 1.01:
+        action_banner = f"<div style='background:#7f1d1d;color:#fecaca;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:8px;border-left:4px solid #ef4444;'>🚨 破位警报：跌破20日防守支撑(${low_20})！主力弃守，短线减仓！</div>"
+    elif curr_price >= high_20 * 0.98 or rsi >= 75:
+        action_banner = f"<div style='background:#854d0e;color:#fef08a;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:8px;border-left:4px solid #eab308;'>⚠️ 阻力预警：逼近前期抛压高位(${high_20})，严禁追涨！</div>"
+
+    # 主力异动穿透
+    if vol_ratio >= 2.0 and pct_change > 1.5:
+        smart_money_tag = "🔥 <b>主力大单抢筹</b>: 机构资金巨量净流入扫货"
+    elif vol_ratio >= 2.0 and pct_change < -1.5:
+        smart_money_tag = "💥 <b>主力放量砸盘</b>: 机构大单抛售出逃，切勿盲目接刀"
+    else:
+        smart_money_tag = "⚖️ <b>量价博弈常态</b>: 量能处于正常区间，无机构突发异动"
+
+    # 财报倒计时
+    earnings_tag = "📅 财报事件: 近期无财报"
     try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period="1y", interval="1d")
-        if len(df) >= 15:
-            curr_price = round(df['Close'].iloc[-1], 2)
-            prev_close = round(df['Close'].iloc[-2], 2)
-            pct_change = round(((curr_price - prev_close) / prev_close) * 100, 2)
-            color = "#10b981" if pct_change >= 0 else "#ef4444"
-            sign = "+" if pct_change >= 0 else ""
-
-            high_20 = round(df['High'].tail(20).max(), 2)
-            low_20 = round(df['Low'].tail(20).min(), 2)
-            
-            curr_vol = df['Volume'].iloc[-1]
-            avg_vol = df['Volume'].rolling(5).mean().iloc[-2]
-            vol_ratio = round(curr_vol / avg_vol, 1) if avg_vol > 0 else 1.0
-            rsi = calculate_rsi(df['Close']).iloc[-1]
-
-            # 盈亏计算
-            user_cost = st.session_state["portfolio_costs"].get(symbol, {}).get("cost", 0.0)
-            user_shares = st.session_state["portfolio_costs"].get(symbol, {}).get("shares", 0)
-            pnl_html = ""
-            if user_cost > 0 and user_shares > 0:
-                pnl_dollars = round((curr_price - user_cost) * user_shares, 2)
-                pnl_pct = round(((curr_price - user_cost) / user_cost) * 100, 2)
-                pnl_c = "#10b981" if pnl_dollars >= 0 else "#ef4444"
-                pnl_s = "+" if pnl_dollars >= 0 else ""
-                pnl_html = f"""
-                <div style="background:#0f172a;border:1px dashed #334155;border-radius:8px;padding:6px 10px;margin-bottom:8px;display:flex;justify-content:space-between;font-size:11px;">
-                    <span>成本: <b>${user_cost}</b> ({user_shares}股)</span>
-                    <span>浮动盈亏: <b style="color:{pnl_c};">{pnl_s}${pnl_dollars} ({pnl_s}{pnl_pct}%)</b></span>
-                </div>
-                """
-
-            # 警报横幅
-            action_banner = ""
-            if curr_price <= low_20 * 1.01:
-                action_banner = f"<div style='background:#7f1d1d;color:#fecaca;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:8px;border-left:4px solid #ef4444;'>🚨 破位警报：跌破20日防守支撑(${low_20})！主力弃守，短线减仓！</div>"
-            elif curr_price >= high_20 * 0.98 or rsi >= 75:
-                action_banner = f"<div style='background:#854d0e;color:#fef08a;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:8px;border-left:4px solid #eab308;'>⚠️ 阻力预警：逼近前期抛压高位(${high_20})，严禁追涨！</div>"
-
-            # 模块三：主力异动深度穿透
-            smart_money_tag = ""
-            if vol_ratio >= 2.0 and pct_change > 1.5:
-                smart_money_tag = "🔥 <b>主力抢筹异动</b>: 机构资金巨量净流入扫货"
-            elif vol_ratio >= 2.0 and pct_change < -1.5:
-                smart_money_tag = "💥 <b>主力砸盘出逃</b>: 机构大单放量抛售，切勿接刀"
-            else:
-                smart_money_tag = "⚖️ <b>资金博弈平稳</b>: 无主力异常异动，处于常态量能"
-
-            # 模块四：财报倒计时
-            earnings_tag = "📅 财报状态: 近期无重大财报事件"
-            try:
-                cal = ticker.calendar
-                if cal is not None and not cal.empty and 'Earnings Date' in cal.index:
-                    earn_date = cal.loc['Earnings Date'][0]
-                    days_left = (earn_date.date() - datetime.now().date()).days
-                    if 0 <= days_left <= 10:
-                        earnings_tag = f"⚠️ <b>财报高危预警</b>: 距离财报仅剩 <b>{days_left} 天</b>，防跳空风险！"
-                    elif days_left > 10:
-                        earnings_tag = f"📅 预计下一次财报: 还有 {days_left} 天"
-            except:
-                pass
-
-            # 模块二：时光机回测与持有周期诊断
-            win_rate, holding_advice = run_backtest_and_holding_analysis(df)
-            verdict = get_expert_decision(symbol, curr_price, pct_change, rsi, low_20, high_20, vol_ratio)
-
-            with col:
-                card_html = (
-                    f"<div style='background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:8px;box-shadow:0 8px 16px rgba(0,0,0,0.35);'>"
-                    f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>"
-                    f"<span style='font-size:22px;font-weight:900;color:#f8fafc;'>{symbol}</span>"
-                    f"<div style='text-align:right;'><span style='font-size:22px;font-weight:800;color:#ffffff;'>${curr_price}</span>"
-                    f"<span style='font-size:13px;font-weight:bold;color:{color};margin-left:4px;'>{sign}{pct_change}%</span></div>"
-                    f"</div>"
-                    f"{pnl_html}"
-                    f"{action_banner}"
-                    f"<div style='display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;background:#0f172a;padding:6px 10px;border-radius:6px;margin-bottom:8px;'>"
-                    f"<span>防守支撑: <b style='color:#34d399'>${low_20}</b></span>"
-                    f"<span>阻力目标: <b style='color:#f87171'>${high_20}</b></span>"
-                    f"<span>RSI: <b>{rsi}</b></span>"
-                    f"<span>量能: <b>{vol_ratio}x</b></span>"
-                    f"</div>"
-                    f"<div style='font-size:11px;color:#cbd5e1;background:#0f172a;border-left:3px solid #38bdf8;padding:6px 8px;border-radius:4px;margin-bottom:8px;'>"
-                    f"{smart_money_tag}<br>{earnings_tag}"
-                    f"</div>"
-                    f"<div style='background:#091e3a;border:1px solid #1e40af;border-radius:8px;padding:10px;margin-bottom:8px;'>"
-                    f"<div style='font-size:11px;font-weight:bold;color:#60a5fa;margin-bottom:2px;'>🤖 实战决断:</div>"
-                    f"<div style='font-size:12px;color:#e2e8f0;line-height:1.4;'>{verdict}</div>"
-                    f"</div>"
-                    f"<div style='font-size:11px;color:#fde047;background:#1e1b4b;border:1px solid #4338ca;padding:8px;border-radius:8px;line-height:1.4;'>"
-                    f"⏳ <b>【模块二·持有周期回测】</b> (历史胜率 {win_rate}%):<br>{holding_advice}"
-                    f"</div>"
-                    f"</div>"
-                )
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                # 交互式专业蜡烛图
-                with st.expander(f"📊 点击查看 {symbol} 交互式蜡烛K线图 (含MA20均线)", expanded=False):
-                    st.plotly_chart(draw_candlestick_chart(df, symbol), use_container_width=True)
-                st.write("")
+        cal = ticker.calendar
+        if cal is not None and not cal.empty and 'Earnings Date' in cal.index:
+            earn_date = cal.loc['Earnings Date'][0]
+            days_left = (earn_date.date() - datetime.now().date()).days
+            if 0 <= days_left <= 10:
+                earnings_tag = f"⚠️ <b>财报倒计时仅剩 {days_left} 天</b> (高危开盲盒期)"
+            elif days_left > 10:
+                earnings_tag = f"📅 预计财报公布: 还有 {days_left} 天"
     except:
-        continue
+        pass
+
+    # 真实新闻渲染
+    if news_list:
+        news_html_str = "<br>".join(news_list)
+    else:
+        news_html_str = "📰 暂无24小时内突发外媒重磅新闻"
+
+    win_rate, holding_advice = run_backtest_and_holding_analysis(df)
+    verdict = get_expert_decision(symbol, curr_price, pct_change, rsi, low_20, high_20, vol_ratio)
+
+    with col:
+        card_html = (
+            f"<div style='background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:6px;box-shadow:0 8px 16px rgba(0,0,0,0.35);'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;'>"
+            f"<div><span style='font-size:22px;font-weight:900;color:#f8fafc;'>{symbol}</span> {pnl_badge}</div>"
+            f"<div style='text-align:right;'><span style='font-size:22px;font-weight:800;color:#ffffff;'>${curr_price}</span>"
+            f"<span style='font-size:13px;font-weight:bold;color:{color};margin-left:4px;'>{sign}{pct_change}%</span></div>"
+            f"</div>"
+            f"{action_banner}"
+            f"<div style='display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;background:#0f172a;padding:6px 10px;border-radius:6px;margin-bottom:8px;'>"
+            f"<span>防守支撑: <b style='color:#34d399'>${low_20}</b></span>"
+            f"<span>阻力目标: <b style='color:#f87171'>${high_20}</b></span>"
+            f"<span>RSI: <b>{rsi}</b></span>"
+            f"<span>量能: <b>{vol_ratio}x</b></span>"
+            f"</div>"
+            f"<div style='font-size:11px;color:#cbd5e1;background:#0f172a;border-left:3px solid #38bdf8;padding:6px 8px;border-radius:4px;margin-bottom:8px;line-height:1.45;'>"
+            f"{smart_money_tag} | {earnings_tag}<br>"
+            f"<div style='margin-top:4px;color:#93c5fd;'>{news_html_str}</div>"
+            f"</div>"
+            f"<div style='background:#091e3a;border:1px solid #1e40af;border-radius:8px;padding:10px;margin-bottom:8px;'>"
+            f"<div style='font-size:11px;font-weight:bold;color:#60a5fa;margin-bottom:2px;'>🤖 实战决断:</div>"
+            f"<div style='font-size:12px;color:#e2e8f0;line-height:1.4;'>{verdict}</div>"
+            f"</div>"
+            f"<div style='font-size:11px;color:#fde047;background:#1e1b4b;border:1px solid #4338ca;padding:8px;border-radius:8px;line-height:1.4;'>"
+            f"⏳ <b>【持有周期诊断】</b> (历史胜率 {win_rate}%):<br>{holding_advice}"
+            f"</div>"
+            f"</div>"
+        )
+        st.markdown(card_html, unsafe_allow_html=True)
+        
+        # 卡片内嵌：录入成本与查看K线图
+        col_c_in, col_k_in = st.columns([1, 1])
+        with col_c_in:
+            with st.popover("💼 录入/修改成本"):
+                st.caption(f"设定 {symbol} 成本与持股：")
+                nc = st.number_input(f"成本单价 ($)", value=float(user_cost), step=0.5, key=f"pop_cost_{symbol}")
+                ns = st.number_input(f"持股数量 (股)", value=int(user_shares), step=10, key=f"pop_share_{symbol}")
+                if st.button("💾 保存", key=f"btn_save_{symbol}", use_container_width=True):
+                    st.session_state["portfolio_costs"][symbol] = {"cost": nc, "shares": ns}
+                    st.rerun()
+        with col_k_in:
+            with st.popover("📊 查看蜡烛K线图"):
+                st.plotly_chart(draw_candlestick_chart(df, symbol), use_container_width=True)
+        st.write("")
 
 # ================= 7. 模块二：$1 - $100 潜力金股深度调研排行榜 =================
 st.markdown("<div style='margin-top:20px;margin-bottom:10px;border-bottom:1px solid #78350f;padding-bottom:6px;'><h3 style='color:#fbbf24;margin:0;font-size:17px;font-weight:800;'>🏆 全自动雷达·潜力金股排行榜 ($1 - $100 深度调研版)</h3><p style='color:#d6d3d1;font-size:11px;margin:2px 0 0 0;'>已包含：公司主营业务赛道 / 核心竞争壁垒 / 中期业绩订单催化剂 / 目标位测算</p></div>", unsafe_allow_html=True)
