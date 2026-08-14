@@ -12,19 +12,20 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 每 30 秒自动无感拉取最新美股行情并全屏刷新
+# 每 30 秒自动无感自刷新
 st_autorefresh(interval=30000, key="realtime_stock_auto_refresh")
 
-# 注入尊享暗黑交易风格 CSS
+# 注入极简暗黑交易风格 CSS
 st.markdown("""
 <style>
     .stApp { background-color: #0b0f19; color: #f8fafc; }
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1200px; }
-    div[data-testid="stExpander"] { background-color: #111827; border: 1px solid #1f2937; border-radius: 12px; }
+    div[data-testid="stExpander"] { background-color: #111827; border: 1px solid #1f2937; border-radius: 14px; }
+    .stTextInput > div > div > input { background-color: #1f2937; color: #f8fafc; border-radius: 10px; border: 1px solid #374151; }
 </style>
 """, unsafe_allow_html=True)
 
-# ================= 2. 会话状态与初始持仓管理 =================
+# ================= 2. 会话状态与初始持仓 =================
 DEFAULT_PORTFOLIO = ["NVDA", "ANET", "NTNX", "IONQ", "SOUN", "JOBY", "EH", "NOK"]
 
 if "my_portfolio" not in st.session_state:
@@ -108,7 +109,7 @@ def get_expert_decision(symbol, price, pct_change, rsi, support, resistance, vol
     else:
         return f"📊 【缩量洗盘·按兵不动】短期正常回调整理，防守位(${support})依然有效，耐心观察多空博弈。"
 
-# ================= 4. 顶部标题与控制栏 =================
+# ================= 4. 顶部操作栏与大盘晴雨表 =================
 col_title, col_btn = st.columns([3, 1])
 with col_title:
     st.markdown("<h2 style='color:#38bdf8;margin:0;font-weight:900;'>⚡ 美股量化实时战斗看板</h2>", unsafe_allow_html=True)
@@ -117,7 +118,6 @@ with col_btn:
     if st.button("🔄 手动强制刷新", use_container_width=True):
         st.rerun()
 
-# ================= 5. 宏观市场大盘晴雨表 =================
 try:
     macro_tickers = ["SPY", "QQQ", "^VIX"]
     macro_data = yf.download(macro_tickers, period="2d", interval="1d", progress=False)['Close']
@@ -140,28 +140,65 @@ try:
 except:
     pass
 
-# ================= 6. 搜索与动态自选管理模块 =================
-with st.expander("🔍 搜索美股 / 管理我的实时盯盘股票池 (点击展开/折叠)", expanded=False):
-    col_input, col_add = st.columns([3, 1])
-    with col_input:
-        new_symbol = st.text_input("输入任意美股代码 (如 TSLA, AAPL, AMD, PLTR)", value="").strip().upper()
-    with col_add:
-        st.write("")
-        st.write("")
-        if st.button("➕ 加入盯盘池", use_container_width=True):
-            if new_symbol and new_symbol not in st.session_state["my_portfolio"]:
-                st.session_state["my_portfolio"].append(new_symbol)
-                st.success(f"已成功添加 {new_symbol} 到实时盯盘池！")
-                st.rerun()
+# ================= 5. 全新极简搜索与即时加自选模块 =================
+search_query = st.text_input("🔍 搜索任意美股代码 (输入如 TSLA, AMD, PLTR, AAPL 查看体检并一键加入盯盘)", value="").strip().upper()
 
-    # 移除股票快捷多选
-    to_remove = st.multiselect("当前盯盘池标的 (选中的标的将被移除):", st.session_state["my_portfolio"], default=[])
-    if st.button("🗑️ 从盯盘池移除选中的股票"):
-        if to_remove:
-            st.session_state["my_portfolio"] = [s for s in st.session_state["my_portfolio"] if s not in to_remove]
-            st.rerun()
+if search_query:
+    try:
+        s_ticker = yf.Ticker(search_query)
+        s_df = s_ticker.history(period="1mo", interval="1d")
+        if len(s_df) >= 15:
+            s_price = round(s_df['Close'].iloc[-1], 2)
+            s_prev = round(s_df['Close'].iloc[-2], 2)
+            s_pct = round(((s_price - s_prev) / s_prev) * 100, 2)
+            s_color = "#10b981" if s_pct >= 0 else "#ef4444"
+            s_sign = "+" if s_pct >= 0 else ""
+            s_high = round(s_df['High'].max(), 2)
+            s_low = round(s_df['Low'].min(), 2)
+            s_vol = s_df['Volume'].iloc[-1]
+            s_avg_vol = s_df['Volume'].rolling(5).mean().iloc[-2]
+            s_vol_r = round(s_vol / s_avg_vol, 1) if s_avg_vol > 0 else 1.0
+            s_rsi = calculate_rsi(s_df['Close']).iloc[-1]
+            s_verdict = get_expert_decision(search_query, s_price, s_pct, s_rsi, s_low, s_high, s_vol_r)
 
-# ================= 7. 模块一：现有持仓实战监控看板 =================
+            # 搜索结果浮层卡片
+            col_res_card, col_res_btn = st.columns([3, 1])
+            with col_res_card:
+                st.markdown(f"""
+                <div style="background:#172554;border:2px solid #3b82f6;border-radius:12px;padding:12px;margin-bottom:10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <span style="font-size:20px;font-weight:900;color:#ffffff;">{search_query}</span>
+                            <span style="font-size:12px;color:#93c5fd;margin-left:8px;">搜索结果即时体检</span>
+                        </div>
+                        <div>
+                            <span style="font-size:18px;font-weight:800;color:#ffffff;">${s_price}</span>
+                            <span style="font-size:12px;font-weight:bold;color:{s_color};margin-left:4px;">{s_sign}{s_pct}%</span>
+                        </div>
+                    </div>
+                    <div style="font-size:11px;color:#bfdbfe;margin-top:4px;">
+                        支撑: <b>${s_low}</b> | 阻力: <b>${s_high}</b> | RSI: <b>{s_rsi}</b> | 量能: <b>{s_vol_r}x</b>
+                    </div>
+                    <div style="font-size:11px;color:#e0e7ff;margin-top:4px;background:#1e3a8a;padding:6px;border-radius:6px;">
+                        💡 <b>决断</b>: {s_verdict}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_res_btn:
+                st.write("")
+                if search_query not in st.session_state["my_portfolio"]:
+                    if st.button(f"➕ 加入实时盯盘", key=f"add_{search_query}", use_container_width=True):
+                        st.session_state["my_portfolio"].append(search_query)
+                        st.toast(f"已成功添加 {search_query} 到实时盯盘！", icon="✅")
+                        st.rerun()
+                else:
+                    st.button("✅ 已在盯盘池中", disabled=True, use_container_width=True)
+        else:
+            st.warning(f"未能获取到标的 {search_query} 的足够历史数据，请检查代码拼写。")
+    except Exception as e:
+        st.error(f"查询失败: {e}")
+
+# ================= 6. 模块一：现有持仓实战监控看板（带一键移除交互） =================
 st.markdown(f"<div style='margin-top:14px;margin-bottom:12px;border-bottom:1px solid #1e293b;padding-bottom:6px;'><h3 style='color:#38bdf8;margin:0;font-size:18px;font-weight:800;'>⚡ 现有持仓实时监控看板 ({len(st.session_state['my_portfolio'])} 只)</h3></div>", unsafe_allow_html=True)
 
 cols_p = st.columns(2)
@@ -193,33 +230,42 @@ for idx, symbol in enumerate(st.session_state["my_portfolio"]):
 
             verdict = get_expert_decision(symbol, curr_price, pct_change, rsi, low_20, high_20, vol_ratio)
 
-            card_html = (
-                f"<div style='background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 8px 16px rgba(0,0,0,0.4);'>"
-                f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>"
-                f"<span style='font-size:22px;font-weight:900;color:#f8fafc;'>{symbol}</span>"
-                f"<div style='text-align:right;'><span style='font-size:22px;font-weight:800;color:#ffffff;'>${curr_price}</span>"
-                f"<span style='font-size:13px;font-weight:bold;color:{color};margin-left:4px;'>{sign}{pct_change}%</span></div>"
-                f"</div>"
-                f"{action_banner}"
-                f"<div style='display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;background:#0f172a;padding:6px 10px;border-radius:6px;margin-bottom:8px;'>"
-                f"<span>防守支撑: <b style='color:#34d399'>${low_20}</b></span>"
-                f"<span>阻力目标: <b style='color:#f87171'>${high_20}</b></span>"
-                f"<span>RSI: <b>{rsi}</b></span>"
-                f"<span>量能: <b>{vol_ratio}x</b></span>"
-                f"</div>"
-                f"<div style='background:#091e3a;border:1px solid #1e40af;border-radius:8px;padding:10px;'>"
-                f"<div style='font-size:11px;font-weight:bold;color:#60a5fa;margin-bottom:4px;'>🤖 Gemini 操盘手实战决断:</div>"
-                f"<div style='font-size:12px;color:#e2e8f0;line-height:1.45;'>{verdict}</div>"
-                f"</div>"
-                f"</div>"
-            )
             with col:
+                card_html = (
+                    f"<div style='background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:6px;box-shadow:0 8px 16px rgba(0,0,0,0.4);'>"
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>"
+                    f"<span style='font-size:22px;font-weight:900;color:#f8fafc;'>{symbol}</span>"
+                    f"<div style='text-align:right;'><span style='font-size:22px;font-weight:800;color:#ffffff;'>${curr_price}</span>"
+                    f"<span style='font-size:13px;font-weight:bold;color:{color};margin-left:4px;'>{sign}{pct_change}%</span></div>"
+                    f"</div>"
+                    f"{action_banner}"
+                    f"<div style='display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;background:#0f172a;padding:6px 10px;border-radius:6px;margin-bottom:8px;'>"
+                    f"<span>防守支撑: <b style='color:#34d399'>${low_20}</b></span>"
+                    f"<span>阻力目标: <b style='color:#f87171'>${high_20}</b></span>"
+                    f"<span>RSI: <b>{rsi}</b></span>"
+                    f"<span>量能: <b>{vol_ratio}x</b></span>"
+                    f"</div>"
+                    f"<div style='background:#091e3a;border:1px solid #1e40af;border-radius:8px;padding:10px;'>"
+                    f"<div style='font-size:11px;font-weight:bold;color:#60a5fa;margin-bottom:4px;'>🤖 Gemini 操盘手实战决断:</div>"
+                    f"<div style='font-size:12px;color:#e2e8f0;line-height:1.45;'>{verdict}</div>"
+                    f"</div>"
+                    f"</div>"
+                )
                 st.markdown(card_html, unsafe_allow_html=True)
+                
+                # 极简轻量移除操作条
+                c_space, c_del = st.columns([4, 1])
+                with c_del:
+                    if st.button(f"✖ 移除", key=f"del_{symbol}", use_container_width=True, help=f"从盯盘池移除 {symbol}"):
+                        st.session_state["my_portfolio"].remove(symbol)
+                        st.toast(f"已将 {symbol} 从盯盘池移除", icon="🗑️")
+                        st.rerun()
+                st.write("")
     except:
         continue
 
-# ================= 8. 模块二：$1 - $100 潜力金股深度调研排行榜 =================
-st.markdown("<div style='margin-top:24px;margin-bottom:12px;border-bottom:1px solid #78350f;padding-bottom:6px;'><h3 style='color:#fbbf24;margin:0;font-size:18px;font-weight:800;'>🏆 全自动雷达·潜力金股排行榜 ($1 - $100 深度调研版)</h3><p style='color:#d6d3d1;font-size:11px;margin:2px 0 0 0;'>已包含：公司主营业务赛道 / 核心竞争壁垒 / 中期业绩订单催化剂 / 目标位测算</p></div>", unsafe_allow_html=True)
+# ================= 7. 模块二：$1 - $100 潜力金股深度调研排行榜 =================
+st.markdown("<div style='margin-top:20px;margin-bottom:12px;border-bottom:1px solid #78350f;padding-bottom:6px;'><h3 style='color:#fbbf24;margin:0;font-size:18px;font-weight:800;'>🏆 全自动雷达·潜力金股排行榜 ($1 - $100 深度调研版)</h3><p style='color:#d6d3d1;font-size:11px;margin:2px 0 0 0;'>已包含：公司主营业务赛道 / 核心竞争壁垒 / 中期业绩订单催化剂 / 目标位测算</p></div>", unsafe_allow_html=True)
 
 scanned = []
 for sym, profile in RADAR_STOCK_PROFILES.items():
@@ -265,33 +311,40 @@ for idx, item in enumerate(scanned[:4]):
     s = "+" if item['pct'] >= 0 else ""
     stars = "⭐️⭐️⭐️⭐️⭐️ (5星·强烈推荐)" if item['score'] >= 90 else "⭐️⭐️⭐️⭐️ (4星·优质入选)"
 
-    radar_card_html = (
-        f"<div style='background:#1c1917;border:2px solid #b45309;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 8px 16px rgba(0,0,0,0.6);'>"
-        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;border-bottom:1px solid #451a03;padding-bottom:6px;'>"
-        f"<span style='font-size:13px;font-weight:900;color:#fbbf24;background:#451a03;padding:3px 8px;border-radius:6px;border:1px solid #d97706;'>{medals[idx]}</span>"
-        f"<span style='font-size:12px;font-weight:bold;color:#fde047;'>{stars}</span>"
-        f"</div>"
-        f"<div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;'>"
-        f"<div><span style='font-size:26px;font-weight:900;color:#ffffff;'>{item['symbol']}</span>"
-        f"<span style='font-size:11px;color:#a8a29e;margin-left:6px;'>综合量化分: <b style='color:#34d399;font-size:14px;'>{item['score']}</b></span></div>"
-        f"<div style='text-align:right;'><span style='font-size:22px;font-weight:800;color:#ffffff;'>${item['price']}</span>"
-        f"<span style='font-size:12px;font-weight:bold;color:{c};margin-left:4px;'>{s}{item['pct']}%</span></div>"
-        f"</div>"
-        f"<div style='display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;'>"
-        f"<span style='background:#064e3b;color:#34d399;font-size:11px;padding:3px 8px;border-radius:4px;font-weight:bold;border:1px solid #059669;'>🛡️ 安全边际：仅高于20日底部 {item['safety_pct']}%</span>"
-        f"<span style='background:#292524;color:#fde047;font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid #78350f;'>价位: $1-$100</span>"
-        f"</div>"
-        f"<div style='font-size:12px;color:#fef3c7;background:#291e10;border:1px solid #78350f;border-radius:8px;padding:10px;margin-bottom:10px;line-height:1.5;'>"
-        f"<div style='color:#fbbf24;font-weight:bold;margin-bottom:4px;'>🏢 核心赛道：{item['sector']}</div>"
-        f"<div style='color:#d6d3d1;margin-bottom:4px;'><b style='color:#fde047;'>🛡️ 护城河壁垒：</b>{item['moat']}</div>"
-        f"<div style='color:#fef08a;'><b style='color:#f59e0b;'>🚀 推荐理由 & 爆发催化：</b>{item['catalyst']}</div>"
-        f"</div>"
-        f"<div style='display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#d6d3d1;background:#0c0a09;padding:6px 10px;border-radius:6px;'>"
-        f"<span>安全防守底线: <b style='color:#34d399'>${item['low_20']}</b></span>"
-        f"<span>RSI: <b style='color:#fde047;'>{item['rsi']}</b></span>"
-        f"<span>2-3月目标位: <b style='color:#f87171'>${item['target']} (+28%)</b></span>"
-        f"</div>"
-        f"</div>"
-    )
     with col:
+        radar_card_html = (
+            f"<div style='background:#1c1917;border:2px solid #b45309;border-radius:14px;padding:18px;margin-bottom:8px;box-shadow:0 8px 16px rgba(0,0,0,0.6);'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;border-bottom:1px solid #451a03;padding-bottom:6px;'>"
+            f"<span style='font-size:13px;font-weight:900;color:#fbbf24;background:#451a03;padding:3px 8px;border-radius:6px;border:1px solid #d97706;'>{medals[idx]}</span>"
+            f"<span style='font-size:12px;font-weight:bold;color:#fde047;'>{stars}</span>"
+            f"</div>"
+            f"<div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;'>"
+            f"<div><span style='font-size:26px;font-weight:900;color:#ffffff;'>{item['symbol']}</span>"
+            f"<span style='font-size:11px;color:#a8a29e;margin-left:6px;'>综合量化分: <b style='color:#34d399;font-size:14px;'>{item['score']}</b></span></div>"
+            f"<div style='text-align:right;'><span style='font-size:22px;font-weight:800;color:#ffffff;'>${item['price']}</span>"
+            f"<span style='font-size:12px;font-weight:bold;color:{c};margin-left:4px;'>{s}{item['pct']}%</span></div>"
+            f"</div>"
+            f"<div style='display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;'>"
+            f"<span style='background:#064e3b;color:#34d399;font-size:11px;padding:3px 8px;border-radius:4px;font-weight:bold;border:1px solid #059669;'>🛡️ 安全边际：仅高于20日底部 {item['safety_pct']}%</span>"
+            f"<span style='background:#292524;color:#fde047;font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid #78350f;'>价位: $1-$100</span>"
+            f"</div>"
+            f"<div style='font-size:12px;color:#fef3c7;background:#291e10;border:1px solid #78350f;border-radius:8px;padding:10px;margin-bottom:10px;line-height:1.5;'>"
+            f"<div style='color:#fbbf24;font-weight:bold;margin-bottom:4px;'>🏢 核心赛道：{item['sector']}</div>"
+            f"<div style='color:#d6d3d1;margin-bottom:4px;'><b style='color:#fde047;'>🛡️ 护城河壁垒：</b>{item['moat']}</div>"
+            f"<div style='color:#fef08a;'><b style='color:#f59e0b;'>🚀 推荐理由 & 爆发催化：</b>{item['catalyst']}</div>"
+            f"</div>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#d6d3d1;background:#0c0a09;padding:6px 10px;border-radius:6px;'>"
+            f"<span>安全防守底线: <b style='color:#34d399'>${item['low_20']}</b></span>"
+            f"<span>RSI: <b style='color:#fde047;'>{item['rsi']}</b></span>"
+            f"<span>2-3月目标位: <b style='color:#f87171'>${item['target']} (+28%)</b></span>"
+            f"</div>"
+            f"</div>"
+        )
         st.markdown(radar_card_html, unsafe_allow_html=True)
+        
+        # 潜力股一键快捷加入盯盘池
+        if st.button(f"⚡ 关注并加入盯盘", key=f"quick_add_{item['symbol']}", use_container_width=True):
+            st.session_state["my_portfolio"].append(item['symbol'])
+            st.toast(f"已将金股 {item['symbol']} 加入你的盯盘池！", icon="🚀")
+            st.rerun()
+        st.write("")
