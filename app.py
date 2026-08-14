@@ -63,8 +63,9 @@ DEFAULT_PORTFOLIO = ["NVDA", "ANET", "NTNX", "IONQ", "SOUN", "JOBY", "EH", "NOK"
 if "my_portfolio" not in st.session_state:
     st.session_state["my_portfolio"] = DEFAULT_PORTFOLIO.copy()
 
+# 纯净初始化：默认成本与股数全部为 0，等待用户真实录入
 if "portfolio_costs" not in st.session_state:
-    st.session_state["portfolio_costs"] = {s: {"cost": 0.0, "shares": 0} for s in DEFAULT_PORTFOLIO}
+    st.session_state["portfolio_costs"] = {}
 
 RADAR_STOCK_PROFILES = {
     "SYM": {
@@ -246,8 +247,6 @@ for i, sym in enumerate(hot_symbols):
         if st.button(f"+ {sym}", key=f"quick_tag_{sym}", use_container_width=True):
             if sym not in st.session_state["my_portfolio"]:
                 st.session_state["my_portfolio"].append(sym)
-                if sym not in st.session_state["portfolio_costs"]:
-                    st.session_state["portfolio_costs"][sym] = {"cost": 0.0, "shares": 0}
                 st.toast(f"已成功添加 {sym} 到盯盘池！", icon="✅")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -294,8 +293,6 @@ if search_query:
                 if search_query not in st.session_state["my_portfolio"]:
                     if st.button(f"➕ 立即盯盘", key=f"add_{search_query}", use_container_width=True):
                         st.session_state["my_portfolio"].append(search_query)
-                        if search_query not in st.session_state["portfolio_costs"]:
-                            st.session_state["portfolio_costs"][search_query] = {"cost": 0.0, "shares": 0}
                         st.toast(f"已成功添加 {search_query} 到实时盯盘！", icon="✅")
                         st.rerun()
                 else:
@@ -305,8 +302,7 @@ if search_query:
     except Exception as e:
         st.error(f"查询失败: {e}")
 
-# ================= 6. 模块一：总账户盈亏看板 + 现有持仓实时监控 =================
-# 先拉取所有持仓现价，计算全局总盈亏
+# ================= 6. 模块一：全局数据抓取与精准盈亏计算 =================
 portfolio_cache = {}
 total_invested = 0.0
 total_market_val = 0.0
@@ -319,14 +315,15 @@ for symbol in st.session_state["my_portfolio"]:
             cp = round(d['Close'].iloc[-1], 2)
             c_cost = st.session_state["portfolio_costs"].get(symbol, {}).get("cost", 0.0)
             c_shares = st.session_state["portfolio_costs"].get(symbol, {}).get("shares", 0)
+            
+            # 只有当用户实际录入了成本和股数时，才计入真实总资产
             if c_cost > 0 and c_shares > 0:
                 total_invested += (c_cost * c_shares)
                 total_market_val += (cp * c_shares)
             
-            # 抓取最新真实美股新闻
             news_items = []
             try:
-                for n in t.news[:2]: # 取最新2条
+                for n in t.news[:2]:
                     title = n.get('title', '')
                     publisher = n.get('publisher', '')
                     if title:
@@ -343,29 +340,55 @@ for symbol in st.session_state["my_portfolio"]:
     except:
         continue
 
-# 顶部总账户盈亏大卡片
-if total_invested > 0:
-    total_pnl_dollars = round(total_market_val - total_invested, 2)
-    total_pnl_pct = round((total_pnl_dollars / total_invested) * 100, 2)
-    tot_color = "#10b981" if total_pnl_dollars >= 0 else "#ef4444"
-    tot_sign = "+" if total_pnl_dollars >= 0 else ""
-    
-    st.markdown(f"""
-    <div style="background:linear-gradient(135deg, #1e293b, #0f172a);border:2px solid {'#059669' if total_pnl_dollars>=0 else '#dc2626'};border-radius:14px;padding:14px 18px;margin-top:14px;margin-bottom:12px;box-shadow:0 8px 20px rgba(0,0,0,0.5);">
-        <div style="font-size:12px;color:#94a3b8;font-weight:bold;margin-bottom:4px;">💼 我的投资组合·总持仓浮动盈亏概况</div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;">
-            <div>
-                <span style="font-size:12px;color:#cbd5e1;">总持仓市值: </span>
-                <span style="font-size:22px;font-weight:900;color:#ffffff;">${round(total_market_val, 2)}</span>
-                <span style="font-size:11px;color:#64748b;margin-left:6px;">(本金: ${round(total_invested, 2)})</span>
-            </div>
-            <div>
-                <span style="font-size:12px;color:#cbd5e1;">累计浮动盈亏: </span>
-                <span style="font-size:22px;font-weight:900;color:{tot_color};">{tot_sign}${total_pnl_dollars} ({tot_sign}{total_pnl_pct}%)</span>
+# ----------------- 交互式投资组合总资产大卡片（点击直接展开修改） -----------------
+with st.expander("💼 【我的真实投资组合 · 点击此处录入与管理持仓盈亏】", expanded=(total_invested > 0)):
+    if total_invested > 0:
+        total_pnl_dollars = round(total_market_val - total_invested, 2)
+        total_pnl_pct = round((total_pnl_dollars / total_invested) * 100, 2)
+        tot_color = "#10b981" if total_pnl_dollars >= 0 else "#ef4444"
+        tot_sign = "+" if total_pnl_dollars >= 0 else ""
+        
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg, #1e293b, #0f172a);border:2px solid {'#059669' if total_pnl_dollars>=0 else '#dc2626'};border-radius:12px;padding:12px 16px;margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <div>
+                    <span style="font-size:12px;color:#94a3b8;">当前总市值: </span>
+                    <span style="font-size:22px;font-weight:900;color:#ffffff;">${round(total_market_val, 2)}</span>
+                    <span style="font-size:11px;color:#64748b;margin-left:4px;">(实际本金: ${round(total_invested, 2)})</span>
+                </div>
+                <div>
+                    <span style="font-size:12px;color:#94a3b8;">累计浮动盈亏: </span>
+                    <span style="font-size:22px;font-weight:900;color:{tot_color};">{tot_sign}${total_pnl_dollars} ({tot_sign}{total_pnl_pct}%)</span>
+                </div>
             </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    else:
+        st.info("💡 你目前尚未录入任何真实持仓数据。请在下方为你持有的股票填写买入成本与数量：")
+
+    st.markdown("<b style='color:#38bdf8;font-size:13px;'>📝 填写我的持仓均价与股数：</b>", unsafe_allow_html=True)
+    
+    cost_form_cols = st.columns(2)
+    temp_costs = {}
+    for idx, sym in enumerate(st.session_state["my_portfolio"]):
+        col_f = cost_form_cols[idx % 2]
+        saved_c = st.session_state["portfolio_costs"].get(sym, {}).get("cost", 0.0)
+        saved_s = st.session_state["portfolio_costs"].get(sym, {}).get("shares", 0)
+        
+        with col_f:
+            c1, c2, c3 = st.columns([1.5, 2, 2])
+            with c1:
+                st.markdown(f"<div style='margin-top:28px;font-weight:900;font-size:16px;'>{sym}</div>", unsafe_allow_html=True)
+            with c2:
+                nc = st.number_input(f"买入均价($)", value=float(saved_c), min_value=0.0, step=0.5, key=f"tbl_c_{sym}")
+            with c3:
+                ns = st.number_input(f"持股数量(股)", value=int(saved_s), min_value=0, step=10, key=f"tbl_s_{sym}")
+            temp_costs[sym] = {"cost": nc, "shares": ns}
+    
+    if st.button("💾 保存并立即计算最新投资盈亏", use_container_width=True):
+        st.session_state["portfolio_costs"] = temp_costs
+        st.toast("持仓成本已保存！正在重新精准计算...", icon="✅")
+        st.rerun()
 
 # 快速移除抽屉
 with st.expander("⚙️ 快速移除 / 管理盯盘股票", expanded=False):
@@ -376,10 +399,13 @@ with st.expander("⚙️ 快速移除 / 管理盯盘股票", expanded=False):
             st.markdown('<div class="remove-pill">', unsafe_allow_html=True)
             if st.button(f"✖ {p_sym}", key=f"remove_pill_{p_sym}", use_container_width=True):
                 st.session_state["my_portfolio"].remove(p_sym)
+                if p_sym in st.session_state["portfolio_costs"]:
+                    del st.session_state["portfolio_costs"][p_sym]
                 st.toast(f"已移除 {p_sym}", icon="🗑️")
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
+# ----------------- 渲染持仓卡片列表 -----------------
 st.markdown(f"<div style='margin-top:14px;margin-bottom:10px;'><h3 style='color:#38bdf8;margin:0;font-size:17px;font-weight:800;'>⚡ 现有持仓实时监控 ({len(st.session_state['my_portfolio'])} 只)</h3></div>", unsafe_allow_html=True)
 
 cols_p = st.columns(2)
@@ -406,17 +432,15 @@ for idx, symbol in enumerate(st.session_state["my_portfolio"]):
     vol_ratio = round(curr_vol / avg_vol, 1) if avg_vol > 0 else 1.0
     rsi = calculate_rsi(df['Close']).iloc[-1]
 
-    # 单股盈亏展示（直接在卡片第一眼）
+    # 单股精准盈亏
     user_cost = st.session_state["portfolio_costs"].get(symbol, {}).get("cost", 0.0)
     user_shares = st.session_state["portfolio_costs"].get(symbol, {}).get("shares", 0)
     if user_cost > 0 and user_shares > 0:
         pnl_dollars = round((curr_price - user_cost) * user_shares, 2)
         pnl_pct = round(((curr_price - user_cost) / user_cost) * 100, 2)
-        pnl_c = "#10b981" if pnl_dollars >= 0 else "#ef4444"
-        pnl_s = "+" if pnl_dollars >= 0 else ""
-        pnl_badge = f"<span style='background:{'#064e3b' if pnl_dollars>=0 else '#7f1d1d'};color:{'#34d399' if pnl_dollars>=0 else '#fca5a5'};font-size:11px;font-weight:bold;padding:2px 8px;border-radius:6px;'>盈亏: {pnl_s}${pnl_dollars} ({pnl_s}{pnl_pct}%)</span>"
+        pnl_badge = f"<span style='background:{'#064e3b' if pnl_dollars>=0 else '#7f1d1d'};color:{'#34d399' if pnl_dollars>=0 else '#fca5a5'};font-size:11px;font-weight:bold;padding:2px 8px;border-radius:6px;'>盈亏: {'+' if pnl_dollars>=0 else ''}${pnl_dollars} ({'+' if pnl_dollars>=0 else ''}{pnl_pct}%)</span>"
     else:
-        pnl_badge = "<span style='color:#64748b;font-size:11px;'>未录入持股成本</span>"
+        pnl_badge = "<span style='color:#64748b;font-size:11px;'>未持有/未录入</span>"
 
     # 警报横幅
     action_banner = ""
@@ -425,7 +449,7 @@ for idx, symbol in enumerate(st.session_state["my_portfolio"]):
     elif curr_price >= high_20 * 0.98 or rsi >= 75:
         action_banner = f"<div style='background:#854d0e;color:#fef08a;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:8px;border-left:4px solid #eab308;'>⚠️ 阻力预警：逼近前期抛压高位(${high_20})，严禁追涨！</div>"
 
-    # 主力异动穿透
+    # 主力异动
     if vol_ratio >= 2.0 and pct_change > 1.5:
         smart_money_tag = "🔥 <b>主力大单抢筹</b>: 机构资金巨量净流入扫货"
     elif vol_ratio >= 2.0 and pct_change < -1.5:
@@ -433,7 +457,7 @@ for idx, symbol in enumerate(st.session_state["my_portfolio"]):
     else:
         smart_money_tag = "⚖️ <b>量价博弈常态</b>: 量能处于正常区间，无机构突发异动"
 
-    # 财报倒计时
+    # 财报事件
     earnings_tag = "📅 财报事件: 近期无财报"
     try:
         cal = ticker.calendar
@@ -447,7 +471,6 @@ for idx, symbol in enumerate(st.session_state["my_portfolio"]):
     except:
         pass
 
-    # 真实新闻渲染
     if news_list:
         news_html_str = "<br>".join(news_list)
     else:
@@ -486,19 +509,8 @@ for idx, symbol in enumerate(st.session_state["my_portfolio"]):
         )
         st.markdown(card_html, unsafe_allow_html=True)
         
-        # 卡片内嵌：录入成本与查看K线图
-        col_c_in, col_k_in = st.columns([1, 1])
-        with col_c_in:
-            with st.popover("💼 录入/修改成本"):
-                st.caption(f"设定 {symbol} 成本与持股：")
-                nc = st.number_input(f"成本单价 ($)", value=float(user_cost), step=0.5, key=f"pop_cost_{symbol}")
-                ns = st.number_input(f"持股数量 (股)", value=int(user_shares), step=10, key=f"pop_share_{symbol}")
-                if st.button("💾 保存", key=f"btn_save_{symbol}", use_container_width=True):
-                    st.session_state["portfolio_costs"][symbol] = {"cost": nc, "shares": ns}
-                    st.rerun()
-        with col_k_in:
-            with st.popover("📊 查看蜡烛K线图"):
-                st.plotly_chart(draw_candlestick_chart(df, symbol), use_container_width=True)
+        with st.popover("📊 查看专业蜡烛K线图"):
+            st.plotly_chart(draw_candlestick_chart(df, symbol), use_container_width=True)
         st.write("")
 
 # ================= 7. 模块二：$1 - $100 潜力金股深度调研排行榜 =================
@@ -581,8 +593,6 @@ for idx, item in enumerate(scanned[:4]):
         
         if st.button(f"⚡ 关注并加入盯盘", key=f"quick_add_{item['symbol']}", use_container_width=True):
             st.session_state["my_portfolio"].append(item['symbol'])
-            if item['symbol'] not in st.session_state["portfolio_costs"]:
-                st.session_state["portfolio_costs"][item['symbol']] = {"cost": 0.0, "shares": 0}
             st.toast(f"已将金股 {item['symbol']} 加入盯盘池！", icon="🚀")
             st.rerun()
         st.write("")
