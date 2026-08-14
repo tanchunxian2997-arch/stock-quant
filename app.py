@@ -15,7 +15,7 @@ st.set_page_config(
 # 每 30 秒自动无感自刷新
 st_autorefresh(interval=30000, key="realtime_stock_auto_refresh")
 
-# 注入极简暗黑交易风格与卡片内嵌按钮样式
+# 注入极简暗黑交易风格与卡片圆角样式
 st.markdown("""
 <style>
     .stApp { background-color: #0b0f19; color: #f8fafc; }
@@ -35,23 +35,6 @@ st.markdown("""
         box-shadow: 0 0 0 1px #38bdf8 !important;
     }
 
-    /* 内嵌右上角极简移除按钮 */
-    .close-btn button {
-        background-color: transparent !important;
-        color: #64748b !important;
-        border: none !important;
-        font-size: 16px !important;
-        font-weight: bold !important;
-        padding: 0px 6px !important;
-        line-height: 1 !important;
-        float: right !important;
-    }
-    .close-btn button:hover {
-        color: #ef4444 !important;
-        background-color: rgba(239, 68, 68, 0.1) !important;
-        border-radius: 6px !important;
-    }
-
     /* 快捷搜索标签按钮 */
     .quick-tag button {
         background-color: #1e293b !important;
@@ -64,6 +47,22 @@ st.markdown("""
     .quick-tag button:hover {
         color: #38bdf8 !important;
         border-color: #38bdf8 !important;
+    }
+
+    /* 移除胶囊按钮样式 */
+    .remove-pill button {
+        background-color: #1f2937 !important;
+        color: #f87171 !important;
+        border: 1px solid #374151 !important;
+        border-radius: 20px !important;
+        font-size: 12px !important;
+        font-weight: bold !important;
+        padding: 4px 12px !important;
+    }
+    .remove-pill button:hover {
+        background-color: #7f1d1d !important;
+        color: #ffffff !important;
+        border-color: #ef4444 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -152,7 +151,7 @@ def get_expert_decision(symbol, price, pct_change, rsi, support, resistance, vol
     else:
         return f"📊 【缩量洗盘·按兵不动】短期正常回调整理，防守位(${support})依然有效，耐心观察多空博弈。"
 
-# ================= 4. 顶部大盘晴雨表 =================
+# ================= 4. 顶部操作栏与大盘晴雨表 =================
 col_title, col_btn = st.columns([3, 1])
 with col_title:
     st.markdown("<h2 style='color:#38bdf8;margin:0;font-weight:900;font-size:22px;'>⚡ 美股量化实时战斗看板</h2>", unsafe_allow_html=True)
@@ -252,8 +251,25 @@ if search_query:
     except Exception as e:
         st.error(f"查询失败: {e}")
 
-# ================= 6. 模块一：现有持仓实战监控看板（卡片右上角内嵌【✖】） =================
-st.markdown(f"<div style='margin-top:16px;margin-bottom:10px;border-bottom:1px solid #1e293b;padding-bottom:6px;'><h3 style='color:#38bdf8;margin:0;font-size:17px;font-weight:800;'>⚡ 现有持仓实时监控看板 ({len(st.session_state['my_portfolio'])} 只)</h3></div>", unsafe_allow_html=True)
+# ================= 6. 模块一：现有持仓实战监控看板（一体化无缝卡片） =================
+col_head1, col_head2 = st.columns([3, 1])
+with col_head1:
+    st.markdown(f"<div style='margin-top:16px;margin-bottom:10px;'><h3 style='color:#38bdf8;margin:0;font-size:17px;font-weight:800;'>⚡ 现有持仓实时监控看板 ({len(st.session_state['my_portfolio'])} 只)</h3></div>", unsafe_allow_html=True)
+with col_head2:
+    pass
+
+# 轻量盯盘池管理折叠抽屉
+with st.expander("⚙️ 快速移除 / 管理盯盘股票", expanded=False):
+    st.caption("点击下方任意股票胶囊，即可一键移出盯盘池：")
+    pill_cols = st.columns(4)
+    for p_idx, p_sym in enumerate(st.session_state["my_portfolio"]):
+        with pill_cols[p_idx % 4]:
+            st.markdown('<div class="remove-pill">', unsafe_allow_html=True)
+            if st.button(f"✖ {p_sym}", key=f"remove_pill_{p_sym}", use_container_width=True):
+                st.session_state["my_portfolio"].remove(p_sym)
+                st.toast(f"已移除 {p_sym}", icon="🗑️")
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
 cols_p = st.columns(2)
 for idx, symbol in enumerate(st.session_state["my_portfolio"]):
@@ -285,23 +301,14 @@ for idx, symbol in enumerate(st.session_state["my_portfolio"]):
             verdict = get_expert_decision(symbol, curr_price, pct_change, rsi, low_20, high_20, vol_ratio)
 
             with col:
-                # 顶部代码栏与右上角【✖】按钮
-                top_c1, top_c2, top_c3 = st.columns([4, 4, 1])
-                with top_c1:
-                    st.markdown(f"<span style='font-size:22px;font-weight:900;color:#f8fafc;'>{symbol}</span>", unsafe_allow_html=True)
-                with top_c2:
-                    st.markdown(f"<div style='text-align:right;'><span style='font-size:20px;font-weight:800;color:#ffffff;'>${curr_price}</span> <span style='font-size:12px;font-weight:bold;color:{color};'>{sign}{pct_change}%</span></div>", unsafe_allow_html=True)
-                with top_c3:
-                    st.markdown('<div class="close-btn">', unsafe_allow_html=True)
-                    if st.button("✖", key=f"del_{symbol}", help=f"从盯盘池移除 {symbol}"):
-                        st.session_state["my_portfolio"].remove(symbol)
-                        st.toast(f"已移除 {symbol}", icon="🗑️")
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                # 下半部主体卡片
+                # 100% 完整一体化无缝卡片
                 card_html = (
-                    f"<div style='background:#1e293b;border:1px solid #334155;border-radius:14px;padding:14px;margin-top:-6px;margin-bottom:14px;box-shadow:0 6px 14px rgba(0,0,0,0.35);'>"
+                    f"<div style='background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 8px 16px rgba(0,0,0,0.35);'>"
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;'>"
+                    f"<span style='font-size:22px;font-weight:900;color:#f8fafc;'>{symbol}</span>"
+                    f"<div style='text-align:right;'><span style='font-size:22px;font-weight:800;color:#ffffff;'>${curr_price}</span>"
+                    f"<span style='font-size:13px;font-weight:bold;color:{color};margin-left:4px;'>{sign}{pct_change}%</span></div>"
+                    f"</div>"
                     f"{action_banner}"
                     f"<div style='display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;background:#0f172a;padding:6px 10px;border-radius:6px;margin-bottom:8px;'>"
                     f"<span>防守支撑: <b style='color:#34d399'>${low_20}</b></span>"
