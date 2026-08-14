@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
@@ -16,7 +17,7 @@ st.set_page_config(
 # 每 45 秒自动无感自刷新
 st_autorefresh(interval=45000, key="realtime_stock_auto_refresh")
 
-# 注入极简暗黑风格 CSS
+# 注入极简暗黑风格与按钮美化
 st.markdown("""
 <style>
     .stApp { background-color: #0b0f19; color: #f8fafc; }
@@ -27,6 +28,21 @@ st.markdown("""
         color: #f8fafc !important;
         border-radius: 10px !important;
         border: 1px solid #1f2937 !important;
+    }
+
+    /* 周期切换单选栏紧凑美化 */
+    div[data-testid="stRadio"] > div {
+        flex-direction: row !important;
+        gap: 6px !important;
+        background: #0f172a !important;
+        padding: 4px 8px !important;
+        border-radius: 8px !important;
+        border: 1px solid #1e293b !important;
+    }
+    div[data-testid="stRadio"] label {
+        font-size: 11px !important;
+        font-weight: bold !important;
+        color: #94a3b8 !important;
     }
 
     .remove-pill button {
@@ -52,6 +68,10 @@ if "my_portfolio" not in st.session_state:
 
 if "portfolio_costs" not in st.session_state:
     st.session_state["portfolio_costs"] = {}
+
+# 全局 K 线周期记忆（默认为 日K）
+if "kline_tf" not in st.session_state:
+    st.session_state["kline_tf"] = "日K (1D)"
 
 RADAR_STOCK_PROFILES = {
     "SYM": {
@@ -106,7 +126,7 @@ RADAR_STOCK_PROFILES = {
     }
 }
 
-# ================= 3. 量化核心计算函数 =================
+# ================= 3. 量化与专业多周期 K 线绘制引擎 =================
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -161,37 +181,113 @@ def run_backtest_and_holding_analysis(df):
         pass
     return 65.0, "📊 历史回测胜率稳健，建议按照 20 日防守位严格执行交易。"
 
-def draw_candlestick_chart(df, symbol):
-    """绘制高实用性、内嵌紧凑型交互式蜡烛K线图"""
-    df_plot = df.tail(45).copy() # 取最近45个交易日，视觉最清晰
-    df_plot['MA20'] = df_plot['Close'].rolling(20).mean()
+def draw_pro_candlestick_chart(ticker_obj, symbol, timeframe_label):
+    """
+    全功能专业级 K 线图：
+    - 支持 日/周/月/季/年 多周期自动聚合重采样
+    - 主图：蜡烛图 + MA20 主力防守线 + MA50 生命线
+    - 副图：成交量柱 + 5周期成交量均线 (Vol-MA5)
+    """
+    try:
+        # 抓取长周期基底数据
+        df_raw = ticker_obj.history(period="5y", interval="1d")
+        if df_raw.empty: return None
 
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=df_plot.index.strftime('%m-%d'),
-        open=df_plot['Open'], high=df_plot['High'],
-        low=df_plot['Low'], close=df_plot['Close'],
-        name="K线",
-        increasing_line_color='#10b981', decreasing_line_color='#ef4444'
-    ))
-    fig.add_trace(go.Scatter(
-        x=df_plot.index.strftime('%m-%d'),
-        y=df_plot['MA20'],
-        mode='lines',
-        name='MA20防守线',
-        line=dict(color='#38bdf8', width=1.5)
-    ))
+        # 根据用户选择的周期进行专业金融重采样 (Resampling)
+        if "日K" in timeframe_label:
+            df_k = df_raw.tail(60).copy() # 最近60个交易日
+            date_fmt = '%m-%d'
+        elif "周K" in timeframe_label:
+            df_k = df_raw.resample('W-FRI').agg({
+                'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
+            }).dropna().tail(52).copy() # 最近52周(1年)
+            date_fmt = '%y/%m/%d'
+        elif "月K" in timeframe_label:
+            df_k = df_raw.resample('ME').agg({
+                'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
+            }).dropna().tail(36).copy() # 最近36个月(3年)
+            date_fmt = '%Y-%m'
+        elif "季K" in timeframe_label:
+            df_k = df_raw.resample('QE').agg({
+                'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
+            }).dropna().tail(20).copy() # 最近20个季度(5年)
+            date_fmt = '%Y-Q%q'
+        elif "年K" in timeframe_label:
+            df_k = df_raw.resample('YE').agg({
+                'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
+            }).dropna().tail(10).copy() # 最近10年
+            date_fmt = '%Y'
+        else:
+            df_k = df_raw.tail(60).copy()
+            date_fmt = '%m-%d'
 
-    fig.update_layout(
-        template='plotly_dark',
-        paper_bgcolor='#0f172a',
-        plot_bgcolor='#0f172a',
-        height=180, # 紧凑高度，专为卡片常驻优化
-        margin=dict(l=5, r=5, t=10, b=5),
-        xaxis_rangeslider_visible=False,
-        showlegend=False
-    )
-    return fig
+        # 计算双均线与成交量均线
+        df_k['MA20'] = df_k['Close'].rolling(20, min_periods=1).mean()
+        df_k['MA50'] = df_k['Close'].rolling(50, min_periods=1).mean()
+        df_k['VOL_MA5'] = df_k['Volume'].rolling(5, min_periods=1).mean()
+
+        # 颜色序列：阳线绿、阴线红
+        colors = ['#10b981' if c >= o else '#ef4444' for c, o in zip(df_k['Close'], df_k['Open'])]
+
+        # 构建主图 + 副图 (高度比 75% : 25%)
+        fig = make_subplots(
+            rows=2, cols=1, shared_xaxes=True,
+            vertical_spacing=0.03,
+            row_heights=[0.75, 0.25]
+        )
+
+        # 1. 主图：蜡烛 K 线
+        fig.add_trace(go.Candlestick(
+            x=df_k.index.strftime(date_fmt),
+            open=df_k['Open'], high=df_k['High'],
+            low=df_k['Low'], close=df_k['Close'],
+            name="K线",
+            increasing_line_color='#10b981', decreasing_line_color='#ef4444'
+        ), row=1, col=1)
+
+        # 2. 主图：MA20 主力线 (青蓝)
+        fig.add_trace(go.Scatter(
+            x=df_k.index.strftime(date_fmt), y=df_k['MA20'],
+            mode='lines', name='MA20主力线',
+            line=dict(color='#38bdf8', width=1.5)
+        ), row=1, col=1)
+
+        # 3. 主图：MA50 生命线 (金黄)
+        fig.add_trace(go.Scatter(
+            x=df_k.index.strftime(date_fmt), y=df_k['MA50'],
+            mode='lines', name='MA50生命线',
+            line=dict(color='#fbbf24', width=1.5, dash='dot')
+        ), row=1, col=1)
+
+        # 4. 副图：成交量柱状图
+        fig.add_trace(go.Bar(
+            x=df_k.index.strftime(date_fmt), y=df_k['Volume'],
+            name='成交量', marker_color=colors, showlegend=False
+        ), row=2, col=1)
+
+        # 5. 副图：5周期成交量均线
+        fig.add_trace(go.Scatter(
+            x=df_k.index.strftime(date_fmt), y=df_k['VOL_MA5'],
+            mode='lines', name='Vol-MA5',
+            line=dict(color='#cbd5e1', width=1), showlegend=False
+        ), row=2, col=1)
+
+        fig.update_layout(
+            template='plotly_dark',
+            paper_bgcolor='#0b0f19',
+            plot_bgcolor='#0b0f19',
+            height=260, # 黄金紧凑高度
+            margin=dict(l=8, r=8, t=10, b=5),
+            xaxis_rangeslider_visible=False,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
+            hovermode='x unified'
+        )
+        fig.update_yaxes(showgrid=True, gridcolor='#1e293b', row=1, col=1)
+        fig.update_yaxes(showgrid=False, row=2, col=1)
+        fig.update_xaxes(showgrid=True, gridcolor='#1e293b')
+        return fig
+    except:
+        return None
 
 # ================= 4. 顶部操作栏与大盘晴雨表 =================
 col_title, col_btn = st.columns([3, 1])
@@ -223,7 +319,7 @@ try:
 except:
     pass
 
-# ================= 5. 极简一行式搜索栏（无任何折叠难看按钮） =================
+# ================= 5. 极简搜索栏 =================
 col_s_input, col_s_btn = st.columns([3.5, 1])
 with col_s_input:
     search_query = st.text_input("", placeholder="🔍 输入美股代码搜索 (如 TSLA, AMD, PLTR, AAPL)...", label_visibility="collapsed").strip().upper()
@@ -378,8 +474,17 @@ with st.expander("⚙️ 快速移除 / 管理盯盘股票", expanded=False):
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-# ----------------- 渲染持仓卡片（常驻内嵌紧凑 K 线） -----------------
-st.markdown(f"<div style='margin-top:12px;margin-bottom:8px;'><h3 style='color:#38bdf8;margin:0;font-size:16px;font-weight:800;'>⚡ 现有持仓实时监控 ({len(st.session_state['my_portfolio'])} 只)</h3></div>", unsafe_allow_html=True)
+# ================= 7. 模块一：持仓卡片与专业多周期 K 线切换 =================
+col_sec_title, col_sec_tf = st.columns([2, 2])
+with col_sec_title:
+    st.markdown(f"<div style='margin-top:12px;'><h3 style='color:#38bdf8;margin:0;font-size:16px;font-weight:800;'>⚡ 现有持仓实时监控 ({len(st.session_state['my_portfolio'])} 只)</h3></div>", unsafe_allow_html=True)
+with col_sec_tf:
+    # 全局多周期无缝切换器
+    tf_options = ["日K (1D)", "周K (1W)", "月K (1M)", "季K (3M)", "年K (1Y)"]
+    selected_tf = st.radio("全局K线周期切换", tf_options, index=tf_options.index(st.session_state["kline_tf"]), horizontal=True, label_visibility="collapsed")
+    if selected_tf != st.session_state["kline_tf"]:
+        st.session_state["kline_tf"] = selected_tf
+        st.rerun()
 
 cols_p = st.columns(2)
 for idx, symbol in enumerate(st.session_state["my_portfolio"]):
@@ -478,15 +583,20 @@ for idx, symbol in enumerate(st.session_state["my_portfolio"]):
             f"<div style='font-size:11px;color:#fde047;background:#1e1b4b;border:1px solid #4338ca;padding:6px 8px;border-radius:8px;line-height:1.35;margin-bottom:6px;'>"
             f"⏳ <b>【持有周期诊断】</b> (历史胜率 {win_rate}%):<br>{holding_advice}"
             f"</div>"
-            f"<div style='font-size:11px;color:#94a3b8;margin-bottom:2px;'>📊 <b>近期蜡烛K线 (含MA20防守线):</b></div>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#94a3b8;margin-bottom:2px;'>"
+            f"<span>📊 <b>专业{st.session_state['kline_tf']} 蜡烛图 (MA20/MA50+成交量)</b></span>"
+            f"</div>"
             f"</div>"
         )
         st.markdown(card_html, unsafe_allow_html=True)
-        # 常驻内嵌 K 线图
-        st.plotly_chart(draw_candlestick_chart(df, symbol), use_container_width=True, config={'displayModeBar': False})
+        
+        # 渲染专业级 K 线图
+        chart_fig = draw_pro_candlestick_chart(ticker, symbol, st.session_state["kline_tf"])
+        if chart_fig:
+            st.plotly_chart(chart_fig, use_container_width=True, config={'displayModeBar': False})
         st.write("")
 
-# ================= 7. 模块二：$1 - $100 潜力金股深度调研排行榜 =================
+# ================= 8. 模块二：$1 - $100 潜力金股深度调研排行榜 =================
 st.markdown("<div style='margin-top:16px;margin-bottom:8px;border-bottom:1px solid #78350f;padding-bottom:4px;'><h3 style='color:#fbbf24;margin:0;font-size:16px;font-weight:800;'>🏆 全自动雷达·潜力金股排行榜 ($1 - $100 深度调研版)</h3></div>", unsafe_allow_html=True)
 
 scanned = []
