@@ -1,8 +1,10 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import time
+from streamlit_autorefresh import st_autorefresh
 
-# ================= 页面基础配置 =================
+# ================= 1. 页面基础配置 =================
 st.set_page_config(
     page_title="⚡ 美股量化实时战斗看板",
     page_icon="📈",
@@ -10,7 +12,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 注入全局样式
+# 每 30 秒 (30000 毫秒) 自动无感拉取最新美股行情并全屏刷新
+st_autorefresh(interval=30000, key="realtime_stock_auto_refresh")
+
+# 注入尊享暗黑风格 CSS
 st.markdown("""
 <style>
     .stApp { background-color: #0b0f19; color: #f8fafc; }
@@ -18,10 +23,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 1. 现有持仓池
+# ================= 2. 标的池配置 =================
+# 现有核心持仓池
 MY_PORTFOLIO = ["NVDA", "ANET", "NTNX", "IONQ", "SOUN", "JOBY", "EH", "NOK"]
 
-# 2. 潜力金股深度调研数据库
+# $1 - $100 潜力金股深度调研数据库
 RADAR_STOCK_PROFILES = {
     "SYM": {
         "sector": "AI 仓储机器人自动化系统",
@@ -75,6 +81,7 @@ RADAR_STOCK_PROFILES = {
     }
 }
 
+# ================= 3. 量化核心计算函数 =================
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -98,16 +105,16 @@ def get_expert_decision(symbol, price, pct_change, rsi, support, resistance, vol
     else:
         return f"📊 【缩量洗盘·按兵不动】短期正常回调整理，防守位(${support})依然有效，耐心观察多空博弈。"
 
-# 头部操作区
+# ================= 4. 顶部操作栏 =================
 col_title, col_btn = st.columns([3, 1])
 with col_title:
     st.markdown("<h2 style='color:#38bdf8;margin:0;font-weight:900;'>⚡ 美股量化实时战斗看板</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='color:#94a3b8;font-size:12px;margin:2px 0 0 0;'>24小时云端常驻 · 30年实战交易员止盈止损引擎 · 深度赛道穿透</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#94a3b8;font-size:12px;margin:2px 0 0 0;'>24小时云端常驻 · 自动每30秒更新最新盘面 · 30年实战交易员风控引擎</p>", unsafe_allow_html=True)
 with col_btn:
-    if st.button("🔄 立即刷新最新行情"):
+    if st.button("🔄 手动强制刷新"):
         st.rerun()
 
-# ================= 模块一：现有持仓实战监控看板 =================
+# ================= 5. 模块一：现有持仓实战监控看板 =================
 st.markdown("<div style='margin-top:16px;margin-bottom:12px;border-bottom:1px solid #1e293b;padding-bottom:6px;'><h3 style='color:#38bdf8;margin:0;font-size:18px;font-weight:800;'>⚡ 现有持仓实时监控看板</h3></div>", unsafe_allow_html=True)
 
 cols_p = st.columns(2)
@@ -164,7 +171,7 @@ for idx, symbol in enumerate(MY_PORTFOLIO):
     except:
         continue
 
-# ================= 模块二：$1 - $100 潜力金股深度调研排行榜 =================
+# ================= 6. 模块二：$1 - $100 潜力金股深度调研排行榜 =================
 st.markdown("<div style='margin-top:24px;margin-bottom:12px;border-bottom:1px solid #78350f;padding-bottom:6px;'><h3 style='color:#fbbf24;margin:0;font-size:18px;font-weight:800;'>🏆 全自动雷达·潜力金股排行榜 ($1 - $100 深度调研版)</h3><p style='color:#d6d3d1;font-size:11px;margin:2px 0 0 0;'>已包含：公司主营业务赛道 / 核心竞争壁垒 / 中期业绩订单催化剂 / 目标位测算</p></div>", unsafe_allow_html=True)
 
 scanned = []
